@@ -1,8 +1,8 @@
-\# LinkedIn Agent Analytics – End-to-End Data Flow
+# LinkedIn Agent Analytics â€“ End-to-End Data Flow
 
 
 
-\## 1. Architecture Overview
+## 1. Architecture Overview
 
 
 
@@ -10,101 +10,113 @@ The LinkedIn Agent Analytics platform follows a layered data architecture:
 
 
 
+```text
+
 LinkedIn Agent
 
-&#x20;     |
+     |
 
-&#x20;     v
+     v
 
 Raw Data / API Source
 
-&#x20;     |
+     |
 
-&#x20;     v
+     v
 
 Ingestion Pipeline
 
-&#x20;     |
+     |
 
-&#x20;     +----> Validation
+     +----> Validation
 
-&#x20;     |        |
+     |        |
 
-&#x20;     |        +---- Invalid Records --> Dead Letter Table
+     |        +---- Invalid Records --> Dead Letter Table
 
-&#x20;     |
+     |
 
-&#x20;     v
+     v
 
 Staging Layer
 
-(stg\_leads)
+(stg_leads)
 
-&#x20;     |
+     |
 
-&#x20;     v
+     v
 
 Star Schema / Warehouse
 
-&#x20;     |
+     |
 
-&#x20;     +----> dim\_agent
+     +----> dim_agent
 
-&#x20;     |
+     |
 
-&#x20;     +----> dim\_lead\_status
+     +----> dim_lead_status
 
-&#x20;     |
+     |
 
-&#x20;     +----> dim\_date
+     +----> dim_date
 
-&#x20;     |
+     |
 
-&#x20;     +----> fct\_leads\_star
+     +----> fct_leads_star
 
-&#x20;     |
+     |
 
-&#x20;     v
+     v
 
 Analytics Layer
 
-&#x20;     |
+     |
 
-&#x20;     +----> Lead Funnel
+     +----> analytics_lead_funnel
 
-&#x20;     +----> Lead Status
+     |
 
-&#x20;     +----> Agent Performance
+     +----> analytics_lead_status
 
-&#x20;     |
+     |
 
-&#x20;     v
+     +----> analytics_agent_performance
 
-Data Quality
+     |
 
-&#x20;     |
+     v
 
-&#x20;     +----> DQ Score
+Data Quality Layer
 
-&#x20;     +----> DQ History
+     |
 
-&#x20;     |
+     +----> DQ Score
 
-&#x20;     v
+     |
+
+     +----> DQ History
+
+     |
+
+     v
 
 Advanced Risk Model
 
-&#x20;     |
+     |
 
-&#x20;     +----> Risk Score
+     +----> Risk Score
 
-&#x20;     +----> Risk Level
+     |
 
-&#x20;     +----> Capacity Recommendation
+     +----> Risk Level
 
-&#x20;     |
+     |
 
-&#x20;     v
+     +----> Capacity Recommendation
+
+     |
+
+     v
 
 Presentation / Dashboard Layer
 

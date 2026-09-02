@@ -1,14 +1,14 @@
-\# LinkedIn Agent Analytics
+# LinkedIn Agent Analytics
 
-\# Data Architecture \& End-to-End Data Flow
-
-
-
-\---
+# Data Architecture \& End-to-End Data Flow
 
 
 
-\## 1. Architecture Overview
+---
+
+
+
+## 1. Architecture Overview
 
 
 
@@ -44,129 +44,138 @@ The architecture consists of:
 
 
 
-\---
+---
 
 
 
-\## 2. High-Level Architecture
+## 2. High-Level Architecture
 
 
 
 ```text
 
-&#x20;                   LINKEDIN AGENT
+                    LINKEDIN AGENT
 
-&#x20;                         |
+                          |
 
-&#x20;                         v
+                          v
 
-&#x20;                 SOURCE DATA / CSV
+                  SOURCE DATA / CSV
 
-&#x20;                         |
+                          |
 
-&#x20;                         v
+                          v
 
-&#x20;                +------------------+
+                 +------------------+
 
-&#x20;                |    ingest.py     |
+                 |    ingest.py     |
 
-&#x20;                |                  |
+                 |                  |
 
-&#x20;                | Deduplication    |
+                 | Deduplication    |
 
-&#x20;                | Transformation   |
+                 | Transformation   |
 
-&#x20;                | Validation       |
+                 | Validation       |
 
-&#x20;                | Watermarking     |
+                 | Watermarking     |
 
-&#x20;                | Retry Handling   |
+                 | Retry Handling   |
 
-&#x20;                +--------+---------+
+                 +--------+---------+
 
-&#x20;                         |
+                          |
 
-&#x20;                 +-------+-------+
+                  +-------+-------+
 
-&#x20;                 |               |
+                  |               |
 
-&#x20;            VALID RECORDS    INVALID RECORDS
+             VALID RECORDS    INVALID RECORDS
 
-&#x20;                 |               |
+                  |               |
 
-&#x20;                 v               v
+                  v               v
 
-&#x20;            stg\_leads      dead\_letter\_leads
+             stg_leads      dead_letter_leads
 
-&#x20;                 |
+                  |
 
-&#x20;                 v
+                  v
 
-&#x20;            fct\_leads\_star
+                                fct_leads_star
+                         |
+         +---------------+----------------+
+         |               |                |
+         v               v                v
 
-&#x20;                 |
+     dim_agent    dim_lead_status     dim_date
 
-&#x20;         +-------+-------+----------------+
+         |               |                |
 
-&#x20;         |               |                |
+         +---------------+----------------+
 
-&#x20;         v               v                v
+                         |
+                         v
 
-&#x20;     dim\_agent    dim\_lead\_status     dim\_date
+                Analytics Layer
+                         |
+         +---------------+----------------+
+         |               |                |
+         v               v                v
 
-&#x20;         |               |                |
+    Lead Funnel     Lead Status     Agent Performance
+         |
+         v
+                Data Quality Checks
+                         |
+                         v
+                    dq_results
+                         |
+                         v
+                Advanced Risk Model
+                         |
+                         v
+              analytics_risk_scores
+                         |
+                         v
+                  DASHBOARD / BI
+                          |
 
-&#x20;         +---------------+----------------+
+          +---------------+----------------+
 
-&#x20;                         |
+          |               |                |
 
-&#x20;                         v
+          v               v                v
 
-&#x20;                   fact\_leads
+    Lead Funnel     Lead Status      Agent Performance
 
-&#x20;                         |
+          |
 
-&#x20;                         v
+          v
 
-&#x20;                Analytics Views
+               Data Quality Checks
 
-&#x20;                         |
+                          |
 
-&#x20;         +---------------+----------------+
+                          v
 
-&#x20;         |               |                |
+                    dq_results
 
-&#x20;         v               v                v
+                          |
 
-&#x20;   Lead Funnel     Lead Status      Agent Performance
+                          v
 
-&#x20;         |
+                 Advanced Risk Model
 
-&#x20;         v
+                          |
 
-&#x20;              Data Quality Checks
+                          v
 
-&#x20;                         |
+                analytics_risk_scores
 
-&#x20;                         v
+                          |
 
-&#x20;                   dq\_results
+                          v
 
-&#x20;                         |
-
-&#x20;                         v
-
-&#x20;                Advanced Risk Model
-
-&#x20;                         |
-
-&#x20;                         v
-
-&#x20;               analytics\_risk\_scores
-
-&#x20;                         |
-
-&#x20;                         v
-
-&#x20;                 DASHBOARD / BI
+                  DASHBOARD / BI
 
