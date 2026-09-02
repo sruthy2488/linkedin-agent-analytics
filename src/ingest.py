@@ -1,5 +1,8 @@
+from venv import logger
+import os
+from alerts import send_alert
 from risk_model import run_risk_model
-
+from logging_utils import get_pipeline_logger
 from dq_checks import (
     create_dq_history_table,
     run_dq_checks,
@@ -461,9 +464,17 @@ def record_pipeline_run(
 
 
 def main():
-
     run_id = str(uuid.uuid4())
     started_at = datetime.now(timezone.utc)
+
+    logger = get_pipeline_logger(run_id)
+
+    logger.info(
+        "Pipeline started",
+        extra={
+            "event": "pipeline_started"
+        }
+    )
 
     print(f"Starting pipeline: {run_id}")
 
@@ -474,12 +485,24 @@ def main():
 
     try:
 
-        
+        # ---------------------------------------------------------
+        # 1. LOAD CSV
+        # ---------------------------------------------------------
 
         df = load_csv()
         rows_read = len(df)
 
-        
+        logger.info(
+            "Input data loaded",
+            extra={
+                "event": "input_loaded",
+                "rows_read": rows_read
+            }
+        )
+
+        # ---------------------------------------------------------
+        # 2. TRANSFORM DATA
+        # ---------------------------------------------------------
 
         df = transform(df)
 
@@ -491,9 +514,20 @@ def main():
             f"{len(df)}"
         )
 
-        
+        # ---------------------------------------------------------
+        # 3. VALIDATE RECORDS
+        # ---------------------------------------------------------
 
         valid_df, dead_letter_df = validate_records(df)
+
+        logger.info(
+            "Input validation completed",
+            extra={
+                "event": "validation_completed",
+                "valid_records": len(valid_df),
+                "dead_letter_records": len(dead_letter_df)
+            }
+        )
 
         print(
             f"Valid records: {len(valid_df)}"
@@ -504,7 +538,9 @@ def main():
             f"{len(dead_letter_df)}"
         )
 
-        
+        # ---------------------------------------------------------
+        # 4. DEAD-LETTER RECORDS
+        # ---------------------------------------------------------
 
         if not dead_letter_df.empty:
 
@@ -515,7 +551,9 @@ def main():
 
         df = valid_df
 
-        
+        # ---------------------------------------------------------
+        # 5. INCREMENTAL PROCESSING
+        # ---------------------------------------------------------
 
         watermark_start = get_current_watermark()
 
@@ -537,6 +575,19 @@ def main():
             prepare_incremental_data(df)
         )
 
+        logger.info(
+            "Incremental processing completed",
+            extra={
+                "event": "incremental_processing_completed",
+                "final_records": len(final_df),
+                "watermark_end": (
+                    str(watermark_end)
+                    if watermark_end is not None
+                    else None
+                )
+            }
+        )
+
         print(
             f"Final records in staging: "
             f"{len(final_df)}"
@@ -547,7 +598,9 @@ def main():
             f"{watermark_end}"
         )
 
-        
+        # ---------------------------------------------------------
+        # 6. LOAD TO BIGQUERY
+        # ---------------------------------------------------------
 
         load_to_bigquery(
             final_df,
@@ -555,42 +608,148 @@ def main():
         )
 
         rows_loaded = len(final_df)
-       
+
+        logger.info(
+            "Staging load completed",
+            extra={
+                "event": "staging_load_completed",
+                "rows_loaded": rows_loaded
+            }
+        )
+
+        # ---------------------------------------------------------
+        # 7. REFRESH WAREHOUSE
+        # ---------------------------------------------------------
+
         print("\nRefreshing warehouse...")
 
         refresh_warehouse()
 
+        logger.info(
+            "Warehouse refresh completed",
+            extra={
+                "event": "warehouse_refresh_completed"
+            }
+        )
+
         print("Warehouse refresh completed.")
-        
+
+        # ---------------------------------------------------------
+        # 8. DATA QUALITY CHECKS
+        # ---------------------------------------------------------
+
         print("\nRunning data quality checks...")
 
         create_dq_history_table()
 
         dq_result = run_dq_checks()
 
+        # Save DQ result only once
         save_dq_result(dq_result)
 
+        logger.info(
+            "Data quality check completed",
+            extra={
+                "event": "dq_check_completed",
+                "dq_score": dq_result["dq_score"],
+                "dq_status": dq_result["dq_status"]
+            }
+        )
+
+        # ---------------------------------------------------------
+        # 9. DQ ALERT
+        # ---------------------------------------------------------
+
         if dq_result["dq_status"] != "PASS":
+
+            send_alert(
+                event="dq_threshold_breach",
+                message=(
+                    "Data quality score fell below "
+                    "the configured threshold."
+                ),
+                run_id=run_id,
+                severity="CRITICAL",
+                dq_score=dq_result["dq_score"],
+                dq_status=dq_result["dq_status"]
+            )
+
             raise RuntimeError(
-             f"Data Quality check failed. "
+                f"Data Quality check failed. "
                 f"Score: {dq_result['dq_score']:.2f}%"
             )
-        
 
         print(
             f"Data Quality check passed: "
             f"{dq_result['dq_score']:.2f}%"
         )
-        
+
+        # ---------------------------------------------------------
+        # 10. ADVANCED RISK MODEL
+        # ---------------------------------------------------------
+
         print("\nRunning advanced risk model...")
 
         run_risk_model()
 
+        logger.info(
+            "Risk model completed",
+            extra={
+                "event": "risk_model_completed"
+            }
+        )
+
         print("Advanced risk model completed.")
 
-        completed_at = datetime.now(
-                    timezone.utc
-             )
+        # ---------------------------------------------------------
+        # 11. PIPELINE COMPLETION
+        # ---------------------------------------------------------
+
+        completed_at = datetime.now(timezone.utc)
+
+        duration_seconds = (
+            completed_at - started_at
+        ).total_seconds()
+
+        logger.info(
+            "Pipeline completed successfully",
+            extra={
+                "event": "pipeline_completed",
+                "status": "SUCCESS",
+                "rows_read": rows_read,
+                "rows_loaded": rows_loaded,
+                "duration_seconds": duration_seconds
+            }
+        )
+
+        # ---------------------------------------------------------
+        # 12. ANOMALOUS DURATION ALERT
+        # ---------------------------------------------------------
+
+        max_duration = float(
+            os.getenv(
+                "MAX_RUN_DURATION_SECONDS",
+                "300"
+            )
+        )
+
+        if duration_seconds > max_duration:
+
+            send_alert(
+                event="anomalous_run_duration",
+                message=(
+                    "Pipeline runtime exceeded "
+                    "the configured maximum duration."
+                ),
+                run_id=run_id,
+                severity="WARNING",
+                duration_seconds=duration_seconds,
+                max_duration_seconds=max_duration
+            )
+
+        # ---------------------------------------------------------
+        # 13. RECORD SUCCESSFUL PIPELINE RUN
+        # ---------------------------------------------------------
 
         record_pipeline_run(
             run_id=run_id,
@@ -607,17 +766,60 @@ def main():
             "\nIngestion completed successfully."
         )
 
+    # =============================================================
+    # PIPELINE FAILURE HANDLER
+    # =============================================================
+
     except Exception as e:
 
-        completed_at = datetime.now(
-            timezone.utc
+        completed_at = datetime.now(timezone.utc)
+
+        duration_seconds = (
+            completed_at - started_at
+        ).total_seconds()
+
+        # ---------------------------------------------------------
+        # Structured failure log
+        # ---------------------------------------------------------
+
+        logger.error(
+            "Pipeline failed",
+            extra={
+                "event": "pipeline_failed",
+                "status": "FAILED",
+                "error": str(e),
+                "duration_seconds": duration_seconds,
+                "rows_read": rows_read,
+                "rows_loaded": rows_loaded
+            }
+        )
+
+        # ---------------------------------------------------------
+        # Pipeline failure alert
+        # ---------------------------------------------------------
+
+        send_alert(
+            event="pipeline_failure",
+            message=(
+                "LinkedIn Agent Analytics "
+                "pipeline failed."
+            ),
+            run_id=run_id,
+            severity="CRITICAL",
+            error=str(e),
+            rows_read=rows_read,
+            rows_loaded=rows_loaded,
+            duration_seconds=duration_seconds
         )
 
         print(
             f"\nPipeline failed: {e}"
         )
 
-       
+        # ---------------------------------------------------------
+        # Record failed pipeline run
+        # ---------------------------------------------------------
+
         try:
 
             record_pipeline_run(
@@ -640,6 +842,7 @@ def main():
                 f"{logging_error}"
             )
 
+        # Re-raise the original error
         raise
 
 
