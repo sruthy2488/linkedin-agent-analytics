@@ -25,14 +25,10 @@ jobs:
           python-version: "3.11"
           cache: "pip"
 
-      - name: Install application dependencies
+      - name: Install test dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
-      - name: Install development dependencies
-        run: |
-          pip install -r requirements-dev.txt
+          pip install pytest==9.1.1 pandas==3.0.3 python-dotenv==1.2.3
 
       - name: Run tests
         run: |
