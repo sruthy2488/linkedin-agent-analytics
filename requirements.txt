@@ -1,0 +1,7 @@
+google-cloud-bigquery==3.43.0
+pandas==3.0.3
+numpy==2.4.6
+db-dtypes==1.7.1
+pyarrow==25.0.1
+python-dotenv==1.2.3
+python-json-logger==4.1.0
