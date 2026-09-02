@@ -1,8 +1,11 @@
 import os
+
 from google.cloud import bigquery
 from dotenv import load_dotenv
 
+
 load_dotenv()
+
 
 PROJECT_ID = os.getenv(
     "GCP_PROJECT_ID",
@@ -14,12 +17,29 @@ DATASET_ID = os.getenv(
     "linkedin_agent_analytics"
 )
 
-client = bigquery.Client(project=PROJECT_ID)
+
+_client = None
 
 
 def get_client():
-    return client
+    """
+    Create the BigQuery client only when it is actually needed.
+
+    This keeps module imports and unit tests independent
+    of Google Cloud credentials.
+    """
+    global _client
+
+    if _client is None:
+        _client = bigquery.Client(
+            project=PROJECT_ID
+        )
+
+    return _client
 
 
 def get_table_id(table_name):
+    """
+    Return a fully-qualified BigQuery table ID.
+    """
     return f"{PROJECT_ID}.{DATASET_ID}.{table_name}"
