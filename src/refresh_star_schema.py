@@ -1,273 +1,298 @@
 from google.cloud import bigquery
+import pandas as pd
+
 
 PROJECT_ID = "project-6e78a808-2b6c-4a39-a63"
 DATASET_ID = "linkedin_agent_analytics"
 
-client = bigquery.Client(project=PROJECT_ID)
 
-STAGING_TABLE = f"{PROJECT_ID}.{DATASET_ID}.stg_leads"
-FACT_TABLE = f"{PROJECT_ID}.{DATASET_ID}.fct_leads_star"
+def get_client():
+    """
+    Create the BigQuery client only when the function is called.
 
-DIM_AGENT = f"{PROJECT_ID}.{DATASET_ID}.dim_agent"
-DIM_STATUS = f"{PROJECT_ID}.{DATASET_ID}.dim_lead_status"
-DIM_DATE = f"{PROJECT_ID}.{DATASET_ID}.dim_date"
+    This prevents pytest/GitHub Actions from requiring GCP
+    credentials just because this module is imported.
+    """
+    return bigquery.Client(project=PROJECT_ID)
 
 
 def refresh_star_schema():
+    """
+    Refresh fct_leads_star by joining the fact table with:
+      - dim_agent
+      - dim_lead_status
+      - dim_date
 
-    print("=" * 60)
+    Also performs referential-integrity validation before
+    replacing the target table.
+    """
+
+    client = get_client()
+
+    print("=" * 70)
     print("STAR SCHEMA REFRESH")
-    print("=" * 60)
+    print("=" * 70)
 
-    query = f"""
-    CREATE OR REPLACE TABLE `{FACT_TABLE}` AS
+    # ---------------------------------------------------------
+    # 1. Load fact table
+    # ---------------------------------------------------------
+    print("\nLoading fact table...")
 
-    SELECT
-
-        s.staging_id,
-
-        s.name,
-        s.job_title,
-        s.company,
-        s.industry,
-        s.location,
-
-        s.agent,
-
-        s.sdr_status,
-        s.comment_status,
-        s.hot_score,
-        s.source,
-        s.prioritized,
-        s.linkedin_url,
-
-        s.added_on,
-        s.last_contacted,
-        s.invite_sent_at,
-        s.connected_at,
-        s.record_updated_at,
-        s.load_timestamp,
-
-        -- -------------------------------------------------
-        -- Fact flags
-        -- -------------------------------------------------
-
-        CASE
-            WHEN s.last_contacted IS NOT NULL
-            THEN 1
-            ELSE 0
-        END AS is_contacted,
-
-        CASE
-            WHEN s.invite_sent_at IS NOT NULL
-            THEN 1
-            ELSE 0
-        END AS is_invite_sent,
-
-        CASE
-            WHEN s.connected_at IS NOT NULL
-            THEN 1
-            ELSE 0
-        END AS is_connected,
-
-        CASE
-            WHEN LOWER(TRIM(s.prioritized)) = 'yes'
-            THEN 1
-            ELSE 0
-        END AS is_prioritized,
-
-        CASE
-            WHEN s.hot_score IS NOT NULL
-                 AND s.hot_score >= 70
-            THEN 1
-            ELSE 0
-        END AS is_hot_lead,
-
-        -- -------------------------------------------------
-        -- Days to connection
-        -- -------------------------------------------------
-
-        CASE
-            WHEN s.invite_sent_at IS NOT NULL
-                 AND s.connected_at IS NOT NULL
-            THEN DATE_DIFF(
-                DATE(s.connected_at),
-                DATE(s.invite_sent_at),
-                DAY
-            )
-            ELSE NULL
-        END AS days_to_connection,
-
-        -- -------------------------------------------------
-        -- Lead status
-        -- -------------------------------------------------
-
-        CASE
-            WHEN s.connected_at IS NOT NULL
-                THEN 'connected'
-
-            WHEN s.invite_sent_at IS NOT NULL
-                THEN 'invite_sent'
-
-            WHEN s.last_contacted IS NOT NULL
-                THEN 'contacted'
-
-            ELSE 'captured'
-        END AS lead_status,
-
-        -- -------------------------------------------------
-        -- Dimension keys
-        -- -------------------------------------------------
-
-        a.agent_key,
-
-        st.status_key,
-
-        d.date_key
-
-    FROM `{STAGING_TABLE}` s
-
-    LEFT JOIN `{DIM_AGENT}` a
-        ON s.agent = a.agent_name
-        AND a.is_current = TRUE
-
-    LEFT JOIN `{DIM_STATUS}` st
-        ON
-        (
-            CASE
-                WHEN s.connected_at IS NOT NULL
-                    THEN 'connected'
-
-                WHEN s.invite_sent_at IS NOT NULL
-                    THEN 'invite_sent'
-
-                WHEN s.last_contacted IS NOT NULL
-                    THEN 'contacted'
-
-                ELSE 'captured'
-            END
-        ) = st.lead_status
-
-    LEFT JOIN `{DIM_DATE}` d
-        ON DATE(s.added_on) = d.full_date
+    fact_query = f"""
+        SELECT *
+        FROM `{PROJECT_ID}.{DATASET_ID}.fct_leads`
     """
-    ensure_dim_date()
 
-    print("\nRefreshing fct_leads_star...")
+    fact_df = client.query(fact_query).to_dataframe()
 
-    job = client.query(query)
-    job.result()
+    print(f"Fact rows loaded: {len(fact_df)}")
 
-    print("fct_leads_star refreshed successfully.")
-    validate_star_schema()
+    # ---------------------------------------------------------
+    # 2. Load agent dimension
+    # ---------------------------------------------------------
+    print("\nLoading agent dimension...")
 
-
-def ensure_dim_date():
+    agent_query = f"""
+        SELECT
+            agent_key,
+            agent_name
+        FROM `{PROJECT_ID}.{DATASET_ID}.dim_agent`
+        WHERE is_current = TRUE
     """
-    Rebuild dim_date from the dates present in staging.
-    Uses CREATE OR REPLACE TABLE instead of DML so it works
-    without billing-enabled BigQuery.
-    """
-    query = f"""
-    CREATE OR REPLACE TABLE `{DIM_DATE}` AS
 
-    SELECT
-        CAST(FORMAT_DATE('%Y%m%d', full_date) AS INT64) AS date_key,
-        full_date,
-        EXTRACT(YEAR FROM full_date) AS year,
-        EXTRACT(MONTH FROM full_date) AS month,
-        FORMAT_DATE('%B', full_date) AS month_name,
-        EXTRACT(QUARTER FROM full_date) AS quarter,
-        EXTRACT(DAY FROM full_date) AS day_of_month,
-        FORMAT_DATE('%A', full_date) AS day_of_week
-    FROM (
-        SELECT DISTINCT
-            DATE(added_on) AS full_date
-        FROM `{STAGING_TABLE}`
-        WHERE added_on IS NOT NULL
+    agent_df = client.query(agent_query).to_dataframe()
+
+    print(f"Agent dimension rows: {len(agent_df)}")
+
+    # ---------------------------------------------------------
+    # 3. Load status dimension
+    # ---------------------------------------------------------
+    print("\nLoading status dimension...")
+
+    status_query = f"""
+        SELECT
+            status_key,
+            lead_status
+        FROM `{PROJECT_ID}.{DATASET_ID}.dim_lead_status`
+    """
+
+    status_df = client.query(status_query).to_dataframe()
+
+    print(f"Status dimension rows: {len(status_df)}")
+
+    # ---------------------------------------------------------
+    # 4. Load date dimension
+    # ---------------------------------------------------------
+    print("\nLoading date dimension...")
+
+    date_query = f"""
+        SELECT
+            date_key,
+            full_date
+        FROM `{PROJECT_ID}.{DATASET_ID}.dim_date`
+    """
+
+    date_df = client.query(date_query).to_dataframe()
+
+    print(f"Date dimension rows: {len(date_df)}")
+
+    # ---------------------------------------------------------
+    # 5. Normalize join columns
+    # ---------------------------------------------------------
+    fact_df["agent"] = (
+        fact_df["agent"]
+        .astype("string")
+        .str.strip()
     )
-    ORDER BY full_date
-    """
 
-    print("\nEnsuring dim_date is up to date...")
-    job = client.query(query)
-    job.result()
-    print("dim_date updated successfully.")
+    agent_df["agent_name"] = (
+        agent_df["agent_name"]
+        .astype("string")
+        .str.strip()
+    )
 
-def validate_star_schema():
+    fact_df["lead_status"] = (
+    fact_df["lead_status"]
+    .astype("string")
+    .str.strip()
+    .str.lower()
+    .str.replace(" ", "_", regex=False)
+)
 
-    print("\nValidating Star Schema...")
+    status_df["lead_status"] = (
+    status_df["lead_status"]
+    .astype("string")
+    .str.strip()
+    .str.lower()
+    .str.replace(" ", "_", regex=False)
+)
+    
+    fact_df["added_date"] = (
+        pd.to_datetime(
+            fact_df["added_on"],
+            errors="coerce"
+        )
+        .dt.date
+    )
 
-    validation_query = f"""
-    SELECT
+    date_df["full_date"] = (
+        pd.to_datetime(
+            date_df["full_date"],
+            errors="coerce"
+        )
+        .dt.date
+    )
 
-        COUNT(*) AS fact_rows,
+    # ---------------------------------------------------------
+    # 7. Join agent dimension
+    # ---------------------------------------------------------
+    fact_df = fact_df.merge(
+        agent_df,
+        how="left",
+        left_on="agent",
+        right_on="agent_name"
+    )
 
-        COUNT(DISTINCT staging_id) AS unique_staging_ids,
+    fact_df.drop(
+        columns=["agent_name"],
+        inplace=True
+    )
 
-        COUNTIF(agent_key IS NULL) AS orphan_agents,
+    # ---------------------------------------------------------
+    # 8. Join status dimension
+    # ---------------------------------------------------------
+    fact_df = fact_df.merge(
+        status_df,
+        how="left",
+        on="lead_status"
+    )
 
-        COUNTIF(status_key IS NULL) AS orphan_statuses,
+    # ---------------------------------------------------------
+    # 9. Join date dimension
+    # ---------------------------------------------------------
+    fact_df = fact_df.merge(
+        date_df,
+        how="left",
+        left_on="added_date",
+        right_on="full_date"
+    )
 
-        COUNTIF(date_key IS NULL) AS orphan_dates
+    fact_df.drop(
+        columns=["full_date", "added_date"],
+        inplace=True
+    )
 
-    FROM `{FACT_TABLE}`
-    """
+    # ---------------------------------------------------------
+    # 10. Referential integrity validation
+    # ---------------------------------------------------------
+    missing_agent_keys = (
+        fact_df["agent_key"].isna().sum()
+    )
 
-    result = list(client.query(validation_query).result())[0]
+    missing_status_keys = (
+        fact_df["status_key"].isna().sum()
+    )
+
+    missing_date_keys = (
+        fact_df["date_key"].isna().sum()
+    )
 
     print()
-    print(f"Fact rows:              {result.fact_rows}")
-    print(f"Unique staging IDs:     {result.unique_staging_ids}")
-    print(f"Orphan agents:          {result.orphan_agents}")
-    print(f"Orphan statuses:        {result.orphan_statuses}")
-    print(f"Orphan dates:           {result.orphan_dates}")
+    print("=" * 70)
+    print("REFERENTIAL INTEGRITY CHECK")
+    print("=" * 70)
 
-    if result.fact_rows != result.unique_staging_ids:
+    print(
+        f"Missing agent keys:  {missing_agent_keys}"
+    )
+
+    print(
+        f"Missing status keys: {missing_status_keys}"
+    )
+
+    print(
+        f"Missing date keys:   {missing_date_keys}"
+    )
+
+    if (
+        missing_agent_keys > 0
+        or missing_status_keys > 0
+        or missing_date_keys > 0
+    ):
         raise RuntimeError(
-            "Star Schema validation failed: duplicate staging IDs."
+            "Dimension key validation failed. "
+            "Fact table contains unmatched dimension values."
         )
 
-    if result.orphan_agents > 0:
-        raise RuntimeError(
-            "Star Schema validation failed: orphan agent keys."
+    print(
+        "All dimension relationships validated successfully."
+    )
+
+    # ---------------------------------------------------------
+    # 11. Convert dimension keys to integer
+    # ---------------------------------------------------------
+    fact_df["agent_key"] = (
+        fact_df["agent_key"]
+        .astype("int64")
+    )
+
+    fact_df["status_key"] = (
+        fact_df["status_key"]
+        .astype("int64")
+    )
+
+    fact_df["date_key"] = (
+        fact_df["date_key"]
+        .astype("int64")
+    )
+
+    # ---------------------------------------------------------
+    # 12. Replace target star fact table
+    # ---------------------------------------------------------
+    target_table = (
+        f"{PROJECT_ID}.{DATASET_ID}.fct_leads_star"
+    )
+
+    print("\nWriting star fact table...")
+
+    job_config = bigquery.LoadJobConfig(
+        write_disposition=(
+            bigquery.WriteDisposition.WRITE_TRUNCATE
         )
+    )
 
-    if result.orphan_statuses > 0:
-        raise RuntimeError(
-            "Star Schema validation failed: orphan status keys."
-        )
+    job = client.load_table_from_dataframe(
+        fact_df,
+        target_table,
+        job_config=job_config
+    )
 
-    if result.orphan_dates > 0:
-        raise RuntimeError(
-            "Star Schema validation failed: orphan date keys."
-        )
+    job.result()
 
-    print("\nStar Schema validation PASSED.")
+    # ---------------------------------------------------------
+    # 13. Success output
+    # ---------------------------------------------------------
+    print()
+    print("=" * 70)
+    print("STAR FACT TABLE CREATED")
+    print("=" * 70)
 
+    print(f"Table: {target_table}")
+    print(f"Rows: {len(fact_df)}")
 
+    print()
+    print("Dimension keys added:")
+    print("  agent_key")
+    print("  status_key")
+    print("  date_key")
+
+    print()
+    print("=" * 70)
+    print("DIMENSION-FACT RELATIONSHIPS COMPLETE")
+    print("=" * 70)
+
+    return True
 
 
 if __name__ == "__main__":
-
-    try:
-
-        refresh_star_schema()
-
-        validate_star_schema()
-
-        print()
-        print("=" * 60)
-        print("STAR SCHEMA REFRESH COMPLETE")
-        print("=" * 60)
-
-    except Exception as e:
-
-        print()
-        print("=" * 60)
-        print("STAR SCHEMA REFRESH FAILED")
-        print("=" * 60)
-
-        print(f"\nError: {e}")
-
-        raise
+    refresh_star_schema()
