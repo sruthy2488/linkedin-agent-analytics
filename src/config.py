@@ -57,9 +57,7 @@ DIM_AGENT_TABLE = f"{GCP_PROJECT_ID}.{BQ_DATASET}.dim_agent"
 DIM_STATUS_TABLE = f"{GCP_PROJECT_ID}.{BQ_DATASET}.dim_status"
 
 
-# ============================================================
-# PIPELINE CONFIGURATION
-# ============================================================
+
 
 PIPELINE_NAME = "polluxa_leads_ingestion"
 
@@ -68,16 +66,8 @@ DQ_THRESHOLD = 95.0
 WATERMARK_COLUMN = "record_updated_at"
 
 
-# ============================================================
-# LOGGING
-# ============================================================
-
 LOG_FILE = LOG_DIR / "pipeline.log"
 
-
-# ============================================================
-# VALIDATION
-# ============================================================
 
 def validate_config():
     """

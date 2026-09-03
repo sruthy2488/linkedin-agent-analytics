@@ -75,9 +75,8 @@ def run_risk_model():
             ) >= 7
         ) AS ghosted_leads,
         COUNTIF(
-            LOWER(COALESCE(comment_status, '')) = 'replied'
-        ) AS replied_leads,
-        AVG(
+    LOWER(TRIM(COALESCE(sdr_status, ''))) = 'replied'
+) AS replied_leads,        AVG(
             CASE
                 WHEN days_to_connection IS NOT NULL
                 THEN days_to_connection

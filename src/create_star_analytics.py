@@ -7,9 +7,6 @@ DATASET_ID = "linkedin_agent_analytics"
 client = bigquery.Client(project=PROJECT_ID)
 
 
-# =========================================================
-# 1. STAR FUNNEL
-# =========================================================
 
 print("Creating analytics_star_funnel...")
 
@@ -65,9 +62,6 @@ client.query(funnel_query).result()
 print("analytics_star_funnel created.")
 
 
-# =========================================================
-# 2. AGENT PERFORMANCE
-# =========================================================
 
 print("Creating analytics_star_agent_performance...")
 
@@ -128,9 +122,6 @@ client.query(agent_query).result()
 print("analytics_star_agent_performance created.")
 
 
-# =========================================================
-# 3. STATUS ANALYSIS
-# =========================================================
 
 print("Creating analytics_star_status...")
 

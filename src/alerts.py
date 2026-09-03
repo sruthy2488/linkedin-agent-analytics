@@ -3,22 +3,13 @@ import os
 import urllib.request
 import urllib.error
 from pathlib import Path
-
 from dotenv import load_dotenv
 
-
-# ---------------------------------------------------------
-# Load the project-level .env file
-# ---------------------------------------------------------
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 load_dotenv(PROJECT_ROOT / ".env")
 
-
-# ---------------------------------------------------------
-# Discord Alert Function
-# ---------------------------------------------------------
 
 def send_alert(
     event,
@@ -57,10 +48,6 @@ def send_alert(
         or Discord rejects/fails the request.
     """
 
-    # -----------------------------------------------------
-    # Read configuration
-    # -----------------------------------------------------
-
     enabled = (
         os.getenv(
             "ALERT_ENABLED",
@@ -79,9 +66,6 @@ def send_alert(
         .strip()
     )
 
-    # -----------------------------------------------------
-    # Check whether alerting is enabled
-    # -----------------------------------------------------
 
     if not enabled:
         print(
@@ -89,9 +73,7 @@ def send_alert(
         )
         return False
 
-    # -----------------------------------------------------
-    # Check webhook configuration
-    # -----------------------------------------------------
+    
 
     if not webhook_url:
         print(
@@ -100,18 +82,12 @@ def send_alert(
         )
         return False
 
-    # -----------------------------------------------------
-    # Build additional details
-    # -----------------------------------------------------
 
     details_text = "\n".join(
         f"**{key}:** {value}"
         for key, value in details.items()
     )
 
-    # -----------------------------------------------------
-    # Build Discord message
-    # -----------------------------------------------------
 
     content = (
         "🚨 **LinkedIn Agent Analytics Alert**\n\n"
@@ -126,17 +102,12 @@ def send_alert(
             f"\n{details_text}"
         )
 
-    # -----------------------------------------------------
-    # Discord webhook payload
-    # -----------------------------------------------------
-
+    
     payload = {
         "content": content
     }
 
-    # -----------------------------------------------------
-    # Send request
-    # -----------------------------------------------------
+    
 
     try:
 
@@ -161,8 +132,7 @@ def send_alert(
             timeout=10
         ) as response:
 
-            # Discord normally returns 204
-            # for a successful webhook request.
+            
 
             if 200 <= response.status < 300:
 
@@ -179,9 +149,7 @@ def send_alert(
 
             return False
 
-    # -----------------------------------------------------
-    # Handle HTTP errors from Discord
-    # -----------------------------------------------------
+    
 
     except urllib.error.HTTPError as error:
 
@@ -215,9 +183,7 @@ def send_alert(
 
         return False
 
-    # -----------------------------------------------------
-    # Handle connection/network errors
-    # -----------------------------------------------------
+   
 
     except urllib.error.URLError as error:
 
@@ -229,9 +195,7 @@ def send_alert(
 
         return False
 
-    # -----------------------------------------------------
-    # Handle unexpected errors
-    # -----------------------------------------------------
+    
 
     except Exception as error:
 

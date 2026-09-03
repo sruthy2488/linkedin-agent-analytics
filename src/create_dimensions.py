@@ -8,9 +8,6 @@ DATASET_ID = "linkedin_agent_analytics"
 client = bigquery.Client(project=PROJECT_ID)
 
 
-# ============================================================
-# 1. CREATE DIMENSION TABLES
-# ============================================================
 
 def create_tables():
 
@@ -60,9 +57,6 @@ def create_tables():
         print(f"{name} created/verified.")
 
 
-# ============================================================
-# 2. READ CURRENT FACT DATA
-# ============================================================
 
 def read_fact_data():
 
@@ -77,9 +71,6 @@ def read_fact_data():
     return client.query(query).to_dataframe()
 
 
-# ============================================================
-# 3. BUILD AGENT DIMENSION
-# ============================================================
 
 def build_agent_dimension(df):
 
@@ -110,9 +101,7 @@ def build_agent_dimension(df):
     return pd.DataFrame(rows)
 
 
-# ============================================================
-# 4. BUILD STATUS DIMENSION
-# ============================================================
+
 
 def build_status_dimension(df):
 
@@ -141,9 +130,6 @@ def build_status_dimension(df):
     return pd.DataFrame(rows)
 
 
-# ============================================================
-# 5. BUILD DATE DIMENSION
-# ============================================================
 
 def build_date_dimension(df):
 

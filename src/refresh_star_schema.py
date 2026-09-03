@@ -151,6 +151,7 @@ def refresh_star_schema():
     LEFT JOIN `{DIM_DATE}` d
         ON DATE(s.added_on) = d.full_date
     """
+    ensure_dim_date()
 
     print("\nRefreshing fct_leads_star...")
 
@@ -158,9 +159,40 @@ def refresh_star_schema():
     job.result()
 
     print("fct_leads_star refreshed successfully.")
+    validate_star_schema()
 
 
+def ensure_dim_date():
+    """
+    Rebuild dim_date from the dates present in staging.
+    Uses CREATE OR REPLACE TABLE instead of DML so it works
+    without billing-enabled BigQuery.
+    """
+    query = f"""
+    CREATE OR REPLACE TABLE `{DIM_DATE}` AS
 
+    SELECT
+        CAST(FORMAT_DATE('%Y%m%d', full_date) AS INT64) AS date_key,
+        full_date,
+        EXTRACT(YEAR FROM full_date) AS year,
+        EXTRACT(MONTH FROM full_date) AS month,
+        FORMAT_DATE('%B', full_date) AS month_name,
+        EXTRACT(QUARTER FROM full_date) AS quarter,
+        EXTRACT(DAY FROM full_date) AS day_of_month,
+        FORMAT_DATE('%A', full_date) AS day_of_week
+    FROM (
+        SELECT DISTINCT
+            DATE(added_on) AS full_date
+        FROM `{STAGING_TABLE}`
+        WHERE added_on IS NOT NULL
+    )
+    ORDER BY full_date
+    """
+
+    print("\nEnsuring dim_date is up to date...")
+    job = client.query(query)
+    job.result()
+    print("dim_date updated successfully.")
 
 def validate_star_schema():
 

@@ -145,20 +145,24 @@ def run_dq_checks():
     # -----------------------------------------------------
 
    
-        timeliness_query = f"""
-        SELECT
-    COUNT(*) AS total_rows,
+    timeliness_query = f"""
+            SELECT
+        COUNT(*) AS total_rows,
 
-    COUNTIF(
-        record_updated_at IS NOT NULL
-        AND record_updated_at <= CURRENT_DATETIME()
-    ) AS timely_records
+        COUNTIF(
+            record_updated_at IS NOT NULL
+            AND record_updated_at <= CURRENT_TIMESTAMP()
+        ) AS timely_records
 
-FROM `{PROJECT_ID}.{DATASET_ID}.stg_leads`
-WHERE record_updated_at IS NOT NULL
-"""
+    FROM `{PROJECT_ID}.{DATASET_ID}.stg_leads`
+    WHERE record_updated_at IS NOT NULL
+    """
 
-        row = list(
+    row = list(
+        client.query(timeliness_query).result()
+    )[0]
+
+    row = list(
             client.query(timeliness_query).result()
         )[0]
 

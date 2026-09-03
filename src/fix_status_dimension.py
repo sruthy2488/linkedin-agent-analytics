@@ -1,9 +1,6 @@
 from google.cloud import bigquery
 
 
-# =========================================================
-# CONFIGURATION
-# =========================================================
 
 PROJECT_ID = "project-6e78a808-2b6c-4a39-a63"
 DATASET_ID = "linkedin_agent_analytics"
@@ -13,9 +10,6 @@ client = bigquery.Client(project=PROJECT_ID)
 TABLE = f"{PROJECT_ID}.{DATASET_ID}.dim_lead_status"
 
 
-# =========================================================
-# REBUILD STATUS DIMENSION
-# =========================================================
 
 print("=" * 60)
 print("FIXING DIM_LEAD_STATUS")
@@ -48,9 +42,6 @@ client.query(query).result()
 print("\ndim_lead_status rebuilt successfully.")
 
 
-# =========================================================
-# VERIFY
-# =========================================================
 
 print("\nFinal status dimension:")
 

@@ -1,4 +1,3 @@
-from venv import logger
 import os
 from alerts import send_alert
 from risk_model import run_risk_model
@@ -10,6 +9,7 @@ from dq_checks import (
 )
 
 from refresh_warehouse import refresh_warehouse
+from refresh_star_schema import refresh_star_schema
 from reliability import run_with_retry
 import hashlib
 from pathlib import Path
@@ -267,9 +267,9 @@ def get_existing_staging():
 
     
     return result.to_dataframe()
-def prepare_incremental_data(df):
 
-    current_watermark = get_current_watermark()
+
+def prepare_incremental_data(df):
 
     df["record_updated_at"] = pd.to_datetime(
         df["record_updated_at"],
@@ -277,8 +277,43 @@ def prepare_incremental_data(df):
         errors="coerce"
     )
 
-    if current_watermark is None:
+    # ---------------------------------------------------------
+    # FULL REFRESH MODE
+    # ---------------------------------------------------------
 
+    full_refresh = (
+        os.getenv("FULL_REFRESH", "false")
+        .strip()
+        .lower() == "true"
+    )
+
+    if full_refresh:
+
+        print(
+            "\nFULL_REFRESH=true"
+        )
+
+        print(
+            "Loading the complete current source dataset."
+        )
+
+        final_df = df.copy()
+
+        new_watermark = (
+            final_df["record_updated_at"].max()
+        )
+
+        print(
+            f"Full-refresh records: {len(final_df)}"
+        )
+
+        return final_df, new_watermark
+
+    
+
+    current_watermark = get_current_watermark()
+
+    if current_watermark is None:
         print(
             "No previous successful "
             "watermark found."
@@ -485,9 +520,6 @@ def main():
 
     try:
 
-        # ---------------------------------------------------------
-        # 1. LOAD CSV
-        # ---------------------------------------------------------
 
         df = load_csv()
         rows_read = len(df)
@@ -500,9 +532,6 @@ def main():
             }
         )
 
-        # ---------------------------------------------------------
-        # 2. TRANSFORM DATA
-        # ---------------------------------------------------------
 
         df = transform(df)
 
@@ -514,9 +543,7 @@ def main():
             f"{len(df)}"
         )
 
-        # ---------------------------------------------------------
-        # 3. VALIDATE RECORDS
-        # ---------------------------------------------------------
+        
 
         valid_df, dead_letter_df = validate_records(df)
 
@@ -538,10 +565,7 @@ def main():
             f"{len(dead_letter_df)}"
         )
 
-        # ---------------------------------------------------------
-        # 4. DEAD-LETTER RECORDS
-        # ---------------------------------------------------------
-
+        
         if not dead_letter_df.empty:
 
             load_dead_letters(
@@ -551,9 +575,7 @@ def main():
 
         df = valid_df
 
-        # ---------------------------------------------------------
-        # 5. INCREMENTAL PROCESSING
-        # ---------------------------------------------------------
+        
 
         watermark_start = get_current_watermark()
 
@@ -598,9 +620,7 @@ def main():
             f"{watermark_end}"
         )
 
-        # ---------------------------------------------------------
-        # 6. LOAD TO BIGQUERY
-        # ---------------------------------------------------------
+       
 
         load_to_bigquery(
             final_df,
@@ -617,9 +637,7 @@ def main():
             }
         )
 
-        # ---------------------------------------------------------
-        # 7. REFRESH WAREHOUSE
-        # ---------------------------------------------------------
+       
 
         print("\nRefreshing warehouse...")
 
@@ -634,9 +652,22 @@ def main():
 
         print("Warehouse refresh completed.")
 
-        # ---------------------------------------------------------
-        # 8. DATA QUALITY CHECKS
-        # ---------------------------------------------------------
+       
+
+        print("\nRefreshing star schema...")
+
+        refresh_star_schema()
+
+        logger.info(
+            "Star schema refresh completed",
+            extra={
+                "event": "star_schema_refresh_completed"
+            }
+        )
+
+        print("Star schema refresh completed.")
+
+        
 
         print("\nRunning data quality checks...")
 
@@ -644,7 +675,6 @@ def main():
 
         dq_result = run_dq_checks()
 
-        # Save DQ result only once
         save_dq_result(dq_result)
 
         logger.info(
@@ -656,9 +686,7 @@ def main():
             }
         )
 
-        # ---------------------------------------------------------
-        # 9. DQ ALERT
-        # ---------------------------------------------------------
+        
 
         if dq_result["dq_status"] != "PASS":
 
@@ -684,9 +712,7 @@ def main():
             f"{dq_result['dq_score']:.2f}%"
         )
 
-        # ---------------------------------------------------------
-        # 10. ADVANCED RISK MODEL
-        # ---------------------------------------------------------
+        
 
         print("\nRunning advanced risk model...")
 
@@ -701,10 +727,7 @@ def main():
 
         print("Advanced risk model completed.")
 
-        # ---------------------------------------------------------
-        # 11. PIPELINE COMPLETION
-        # ---------------------------------------------------------
-
+        
         completed_at = datetime.now(timezone.utc)
 
         duration_seconds = (
@@ -722,9 +745,7 @@ def main():
             }
         )
 
-        # ---------------------------------------------------------
-        # 12. ANOMALOUS DURATION ALERT
-        # ---------------------------------------------------------
+        
 
         max_duration = float(
             os.getenv(
@@ -747,9 +768,7 @@ def main():
                 max_duration_seconds=max_duration
             )
 
-        # ---------------------------------------------------------
-        # 13. RECORD SUCCESSFUL PIPELINE RUN
-        # ---------------------------------------------------------
+        
 
         record_pipeline_run(
             run_id=run_id,
@@ -766,9 +785,7 @@ def main():
             "\nIngestion completed successfully."
         )
 
-    # =============================================================
-    # PIPELINE FAILURE HANDLER
-    # =============================================================
+    
 
     except Exception as e:
 
@@ -778,9 +795,7 @@ def main():
             completed_at - started_at
         ).total_seconds()
 
-        # ---------------------------------------------------------
-        # Structured failure log
-        # ---------------------------------------------------------
+       
 
         logger.error(
             "Pipeline failed",
@@ -794,10 +809,7 @@ def main():
             }
         )
 
-        # ---------------------------------------------------------
-        # Pipeline failure alert
-        # ---------------------------------------------------------
-
+       
         send_alert(
             event="pipeline_failure",
             message=(
@@ -816,9 +828,7 @@ def main():
             f"\nPipeline failed: {e}"
         )
 
-        # ---------------------------------------------------------
-        # Record failed pipeline run
-        # ---------------------------------------------------------
+        
 
         try:
 
@@ -842,7 +852,6 @@ def main():
                 f"{logging_error}"
             )
 
-        # Re-raise the original error
         raise
 
 

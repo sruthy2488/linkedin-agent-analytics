@@ -80,15 +80,10 @@ def refresh_fct_leads(client):
     print("fct_leads refreshed successfully.")
 
 
-# ---------------------------------------------------------
-# Refresh Analytics Views
-# ---------------------------------------------------------
 
 def refresh_analytics(client):
 
-    # -----------------------------------------------------
-    # Lead Funnel
-    # -----------------------------------------------------
+    
 
     funnel_query = f"""
     CREATE OR REPLACE VIEW
@@ -233,10 +228,8 @@ def refresh_warehouse():
 
     print("\nRefreshing warehouse...")
 
-    # Step 1: Refresh fact table
     refresh_fct_leads(client)
 
-    # Step 2: Refresh analytics views
     refresh_analytics(client)
 
     print("\nWarehouse refresh completed successfully.")

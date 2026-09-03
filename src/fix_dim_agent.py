@@ -62,9 +62,6 @@ client.query(query).result()
 print("dim_agent replaced successfully.")
 
 
-# ------------------------------------------------------------
-# Verify schema
-# ------------------------------------------------------------
 
 table = client.get_table(source)
 
@@ -78,10 +75,6 @@ for field in table.schema:
         f"{field.mode}"
     )
 
-
-# ------------------------------------------------------------
-# Verify records
-# ------------------------------------------------------------
 
 query = f"""
 SELECT *
